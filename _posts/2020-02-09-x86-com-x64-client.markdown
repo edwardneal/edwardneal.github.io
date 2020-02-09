@@ -1,0 +1,19 @@
+---
+layout: post
+title:  "Using 32-bit COM objects from 64-bit clients"
+date:   2020-02-09 21:00:00 +0000
+categories: com architecture x86 x64
+---
+This can sometimes arise during server migrations: moving from older versions of Windows Server (which are usually 32-bit) to newer ones (which have been 64-bit-only since Windows Server 2008 R2.)
+
+The reason that this causes problems is that a 64-bit process can't directly host 32-bit code (and vice versa.) This means that if you're updating an application which has moved from 32-bit to 64-bit, (such as SQL Server or PowerShell) it might no longer be able to instantiate the COM class: `CreateObject` or `New-Object -ComObject` might start to fail.
+
+If you're using PowerShell then you can usually just use the 32-bit version, located in `%WINDIR%\SysWOW64\WindowsPowerShell\v1.0\powershell.exe`. This might not always be an option though: you might not have control over the client application (i.e. VBScript steps in SQL Server Agent jobs), or might need to instantiate a mix of 32-bit and 64-bit COM objects.
+
+The solution here is to use the DllSurrogate mechanism. This will run the 32-bit COM object in a "surrogate process". You can configure this using the registry, and it doesn't require any kind of application or server restarts.
+
+1. Look in `HKEY_CLASSES_ROOT\WOW6432Node` for a child with the name of your COM object. This is usually the class you're trying to instantiate, although it might be suffixed with a number (e.g. `.1`).
+2. Check the `CLSID` key, then look at its `(Default)` value. This is the COM object's CLSID - keep track of it.
+3. Look in `HKEY_CLASSES_ROOT\WOW6432Node\CLSID\{CLSID from step 2}`. If it doesn't contain an `AppID` value, create one (with a type of `REG_SZ`.) It doesn't matter what this is, as long as it's unique. Keep track of the `AppID` value.
+4. Look in `HKEY_CLASSES_ROOT\WOW6432Node\AppID\{AppID from step 3}`. If this key doesn't exist, create it.
+5. Create a new value named `DllSurrogate` inside the key from step 4. It needs to be of type `REG_SZ`, but doesn't need a value.
